@@ -1,0 +1,39 @@
+# Python environments and generated files
+.venv/
+**/__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+
+# Frontend dependencies and build output
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+
+# Persistent local document index
+backend/vector_db/
+
+# Local environment files; keep sample configuration
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# IDE and operating-system files
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Logs and temporary/generated files
+*.log
+*.tmp
+*.temp
+*.tmp.pdf
+*.pdf.tmp

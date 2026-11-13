@@ -1,0 +1,303 @@
+ENTERPRISE AI KNOWLEDGE ASSISTANT
+PROJECT PROGRESS
+Last updated: 2026-11-13
+
+PROJECT GOAL
+Build a React and FastAPI application that lets users upload PDFs, index their
+contents locally, and retrieve relevant source passages from one or more
+documents. Retrieval and local LLM answer generation are implemented.
+
+
+COMPLETED MILESTONES
+
+1. React frontend and FastAPI PDF upload
+   - Built a Vite/React dashboard with application branding, navigation,
+     responsive layout, PDF upload, drag-and-drop, and browse-file support.
+   - Added upload status, filename and file size display, errors, extracted
+     text preview, and backend health/connection status.
+   - Added FastAPI CORS support for http://localhost:5173.
+   - Preserved GET / and GET /health.
+   - Added PDF upload validation, including a 20 MB limit, empty/invalid PDF
+     handling, and page-by-page text extraction with PyMuPDF.
+   - The chat area was initially a visual placeholder and was enabled in
+     Milestone 3 after retrieval was verified.
+
+2. PDF ingestion and retrieval pipeline
+   - Added page-aware PDF extraction, preserving original page numbers and
+     recording empty pages, page count, and extracted character count.
+   - Added reusable chunking with approximately 800 characters per chunk and
+     150 characters of overlap. Chunks retain source page information.
+   - Added local Ollama embeddings using the nomic-embed-text model and its
+     /api/embed endpoint. Embedding requests are validated and use timeouts.
+   - Added persistent ChromaDB storage under backend/vector_db/.
+   - Indexed document chunks with unique document IDs and source metadata.
+   - Added similarity search returning source text, filename, page number, and
+     cosine distance. Lower cosine distance indicates a closer match.
+
+3. Retrieval diagnosis and multiple-document support
+   - Traced search queries from the React input through Axios, FastAPI,
+     Ollama, ChromaDB, and back to the results UI.
+   - Confirmed the search sends the latest question, creates a fresh query
+     embedding for each request, and replaces old results. No fixed questions,
+     cached query vectors, or hardcoded retrieval answers were found.
+   - Diagnosed the primary retrieval issue: Nomic task prefixes were missing.
+     Document chunks now use "search_document:" and user queries use
+     "search_query:".
+   - Migrated the existing stored vectors in place using their existing text.
+     Document IDs, chunk IDs, text, and metadata were preserved. The migration
+     is idempotent and does not require re-extracting or rechunking PDFs.
+   - Added a persistent document list, all-document or selected-document
+     search, and isolated deletion of an individual document.
+   - Search results show actual retrieved passage text with its PDF filename
+     and original page. No page-specific logic or prewritten answers are used.
+
+4. RAG-based LLM question answering
+   - Added a local Ollama chat service using OLLAMA_CHAT_MODEL and
+     OLLAMA_CHAT_TIMEOUT environment variables. The default answer model is
+     qwen2.5:1.5b-instruct.
+   - Added a RAG service that reuses the Nomic query embedder and existing
+     document-filtered ChromaDB search, then sends bounded retrieved text to
+     the local model.
+   - Added a strict prompt that treats PDF passages as untrusted evidence,
+     forbids unsupported claims and fabricated citations, and instructs the
+     model to abstain when context is insufficient.
+   - Added a configurable cosine-distance guard. With the default threshold
+     of 0.48, no sufficiently close passage returns an insufficient-information
+     response without calling the LLM.
+   - Added POST /api/chat with optional document IDs, top_k validation,
+     model/embedding/database error handling, and source references derived
+     from actual ChromaDB metadata.
+   - Enabled the React chat input, document-scope selector, multi-question
+     session, loading/error states, duplicate-submit protection, and expandable
+     filename/page/excerpt references.
+   - Preserved the existing /api/search response shape and the existing PDF,
+     embedding, ChromaDB, and multi-document workflows.
+
+5. Qwen model and retrieval tuning
+   - Switched the centralized OLLAMA_CHAT_MODEL default to
+     qwen2.5:1.5b-instruct. No model was downloaded.
+   - Kept document and query embedding configuration unchanged. Ollama
+     resolves the configured nomic-embed-text model to nomic-embed-text:latest.
+   - Set default top_k to 3 across chat, retrieval endpoints, the RAG service,
+     and frontend API helpers. The supported range remains 1 through 20.
+   - Calibrated the default cosine-distance relevance cutoff from 0.4 to 0.48
+     after a relevant GreenLeaf results passage at distance 0.463 was rejected
+     by the previous cutoff. Similarity scores and ranking are unchanged.
+
+
+CURRENT API
+- GET /                         Health-style home response
+- GET /health                   Backend health check
+- POST /api/documents/upload    Upload, extract, embed, and index a PDF
+- GET /api/documents            List indexed documents
+- DELETE /api/documents/{id}    Delete only the selected document's chunks
+- POST /api/search              Search all documents or selected document IDs
+- POST /api/chat                Generate a grounded answer with actual sources
+- POST /api/documents/{id}/search
+                                Search one specific document
+- GET /docs                     FastAPI Swagger documentation
+
+Search requests accept a non-empty query and top_k from 1 to 20; top_k defaults
+to 3. The general search endpoint searches all documents when document_ids is
+omitted; when IDs are provided, results are filtered to those documents.
+
+
+IMPLEMENTATION AREAS
+- backend/main.py: FastAPI routes, request validation, CORS, upload and search.
+- backend/services/pdf_processor.py: page-by-page PDF extraction and statistics.
+- backend/services/text_chunker.py: page-aware text chunks and overlap.
+- backend/services/embedding_service.py: Ollama embedding requests and
+  Nomic task prefixes.
+- backend/services/llm_service.py: configurable local Ollama chat requests,
+  low-temperature generation, response validation, and safe errors.
+- backend/services/rag_service.py: retrieval/context orchestration, context
+  size and distance guards, prompt-injection handling, and source references.
+- backend/services/document_indexer.py: coordinates chunking, embeddings, and
+  storage.
+- backend/services/vector_store.py: persistent ChromaDB, metadata, filtering,
+  search, document listing, and deletion.
+- backend/services/embedding_migration.py: safe, repeatable migration of
+  existing vectors to the current embedding profile.
+- frontend/src/components/: reusable upload, search, chat, header, and
+  navigation UI components.
+- frontend/src/components/ChatWindow.jsx and ChatInput.jsx: multi-question
+  chat session, document selection, loading, errors, and source display.
+- frontend/src/services/api.js: frontend API calls.
+- README.md: setup instructions and API documentation.
+- PROJECT_PROGRESS.txt: project milestones and verification history.
+
+
+VERIFICATION COMPLETED
+- Backend unit tests: 52 passed.
+- Frontend production build: passed.
+- Frontend lint: passed.
+- Local Ollama embeddings: verified numeric, distinct 768-dimensional vectors
+  for different questions using nomic-embed-text.
+- Existing CodePulse PDF: verified 11 pages and 16,021 extracted characters;
+  its index contains 27 chunks.
+- Controlled CodePulse searches after the prefix fix:
+    * "Who submitted the CodePulse project?" -> page 1, distance 0.271814.
+    * "Which technologies are used in the CodePulse project?" -> relevant
+      stack summary on page 3, distance 0.272589. The detailed page 9
+      technology section appears at rank 20 when top_k=20 (distance 0.392813).
+    * "What are the development phases of the CodePulse project?" -> page 11,
+      distance 0.267579.
+    * "What are the target users of this platform?" -> page 6,
+      distance 0.227116.
+- Browser verification confirmed the exact current question and selected
+  document ID reach the API, and new results replace previous results.
+- Multi-document integration checks verified dynamic indexing, all-document
+  search, selected-document isolation, unknown-document handling, and deleting
+  one document without deleting another.
+- The existing Chroma collection has 31 vectors across three indexed
+  documents. The embedding migration was applied without deleting documents.
+- Actual local Ollama RAG: CodePulse technology question returned a stack
+  answer with CodePulse page 3 sources.
+- Actual local Ollama RAG: all-document course question returned the
+  certificate titles with combined_certificates_3.pdf pages 2 and 1.
+- Actual GreenLeaf_Office_Sustainability_Report.pdf checks using Qwen:
+    * Energy and water target owner: Ananya Rao, Facilities Manager; source
+      page 1.
+    * Electricity savings are below target because two server rooms require
+      continuous cooling; source page 2.
+    * Employee participation is 70%; source page 2. This relevant passage was
+      admitted after updating the distance cutoff.
+    * The four-measure summary returned electricity 9%, landfill waste 30%,
+      water 6%, and employee participation 70%; sources on pages 1 and 2.
+    * Annual revenue was answered as "not mentioned in the provided passages";
+      the model did not invent a revenue figure.
+- Actual Ollama reported qwen2.5:1.5b-instruct and
+  nomic-embed-text:latest as the loaded chat and embedding models.
+- Live retrieval returned three passages by default. Explicit top_k values 1,
+  5, and 20 worked for both all-document and selected-document searches.
+- Actual prompt-injection check returned insufficient information and did not
+  follow instructions contained in the retrieved passage.
+- Browser verification captured the selected CodePulse ID and top_k=2, then
+  an all-document request with document_ids=null. It displayed source
+  filenames/pages, preserved multiple question/answer messages, and disabled
+  submission while a request was running.
+- No dependencies were installed, models were downloaded, documents
+  re-indexed, or ChromaDB data changed. The Nomic embedding configuration was
+  not modified.
+
+
+KNOWN NOTES
+- For the technology question, the top result is a relevant stack summary on
+  page 3. The detailed page 9 section is lower-ranked and appears at rank 20;
+  this is a retrieval-ranking nuance, not a hardcoded result or altered score.
+- The persistent Chroma database still contains an earlier two-chunk
+  rag-ui-test.pdf validation index. Its temporary source PDF was removed.
+  The index was left in place rather than deleting an existing indexed
+  document; it may appear in searches across all documents.
+- The backend requirements include FastAPI and ChromaDB pins to keep their
+  installed versions compatible. No external paid embedding API is used.
+- RAG_MAX_COSINE_DISTANCE defaults to 0.48 based on the indexed PDF checks;
+  tune it if other document types produce false abstentions or weak matches.
+- Natural-language abstentions such as "not mentioned in the provided
+  passages" are now normalized to the standard insufficient-information answer
+  and status. A regression test covers this behavior.
+- The electricity answer also mentioned a water-related issue that was
+  supported by a retrieved passage but not asked for. Review excerpts for
+  relevance; the 1.5B model can add related details or paraphrase imperfectly.
+
+
+HOW TO RUN
+Prerequisites: the existing Python virtual environment, Node.js/npm, and
+Ollama running locally with nomic-embed-text:latest and
+qwen2.5:1.5b-instruct available.
+
+Backend (from the project root, in PowerShell):
+  .\.venv\Scripts\python.exe -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
+
+Optional backend environment overrides (set before starting Uvicorn):
+  $env:OLLAMA_CHAT_MODEL = "qwen2.5:1.5b-instruct"
+  $env:OLLAMA_CHAT_TIMEOUT = "120"
+  $env:RAG_MAX_COSINE_DISTANCE = "0.48"
+
+Frontend (in another PowerShell window):
+  Set-Location .\frontend
+  npm install
+  if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+  npm run dev
+
+URLs:
+  Frontend:  http://localhost:5173
+  Backend:   http://127.0.0.1:8000
+  API docs:  http://127.0.0.1:8000/docs
+  Ollama:    http://localhost:11434
+
+Backend unit tests (from the project root):
+  .\.venv\Scripts\python.exe -m unittest discover -s backend\tests -v
+
+Frontend checks (from frontend/):
+  npm run lint
+  npm run build
+
+The existing Chroma database is already migrated. If setting up an older
+database created before the Nomic prefixes were added, run this once from the
+project root:
+  .\.venv\Scripts\python.exe -m backend.services.embedding_migration
+
+
+FINAL FUNCTIONAL TESTING - 2026-11-13
+
+Automated results:
+- Complete backend suite: 58 tests passed.
+- Frontend lint: passed.
+- Frontend production build: passed.
+- Tests cover generated PDF upload validation (non-PDF, empty, unreadable,
+  oversized, and no extractable text), extraction/page metadata, embedding
+  failure, all-document and selected-document retrieval, source citations,
+  deletion isolation, RAG insufficient-context behavior, model configuration,
+  and Ollama/vector-store error handling.
+- Upload/search/chat/delete integration tests use a ChromaDB ephemeral
+  collection and mocked embedding/LLM calls. Persistent ChromaDB data was not
+  changed.
+- Live GET /, GET /health, and GET /api/documents returned HTTP 200. The
+  document list is currently empty. The frontend reported the backend
+  connected. CORS preflight for http://localhost:5173 returned HTTP 200.
+
+Browser/UI checks actually performed:
+- In the browser, verified backend-connected state and empty live document
+  state.
+- With mocked API responses and generated test PDFs, verified invalid
+  extension and empty-file messages, a successful upload display, a chat
+  response with filename/page source, and submission disabled while the chat
+  request was pending.
+- Verified search requests use document_ids=null for all documents and the
+  selected document ID for a selected-document search. The retrieved passage,
+  filename, and page were displayed.
+- Verified the mocked delete flow removes the document from the UI.
+- These interaction checks used Playwright programmatic DOM clicks after
+  pointer-actionability waits timed out. Native pointer behavior, drag/drop,
+  and responsive/mobile layouts still need manual verification.
+
+Issue fixed:
+- RAG previously returned status "success" when the model gave a clear
+  natural-language abstention instead of the exact insufficient-information
+  sentinel. The RAG service now normalizes the known abstention wording to the
+  consistent insufficient-context response. Added a regression test.
+
+Files changed for this testing round:
+- backend/services/rag_service.py
+- backend/tests/test_rag_service.py
+- backend/tests/test_document_api.py (new)
+- PROJECT_PROGRESS.txt
+
+Not verified in this round:
+- The GreenLeaf PDF is not present in the project, and the live indexed
+  document list is empty. GreenLeaf question/answer checks and live local
+  Ollama RAG checks could not be repeated without the document.
+- A second unrelated PDF was tested through generated-PDF automated tests
+  using mocked embeddings and LLM, not through live Ollama.
+- Manually upload a real PDF and verify actual Ollama answers/citations,
+  drag-and-drop, and native pointer/responsive behavior when suitable test
+  documents are available.
+
+
+NEXT
+- Continue validating retrieval against newly uploaded PDFs and real user
+  documents without adding document-specific behavior.
+- If desired, review whether the old rag-ui-test.pdf index should be removed.
+- Review the RAG answers and source excerpts before extending the project to
+  deployment or monitoring milestones.

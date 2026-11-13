@@ -1,0 +1,7 @@
+fastapi==0.162.5
+uvicorn[standard]
+python-multipart
+pymupdf
+chromadb==1.5.9
+requests
+python-dotenv
